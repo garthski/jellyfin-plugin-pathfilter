@@ -203,7 +203,7 @@ public sealed class PathFilterService : IDisposable
                 progress?.Report(90.0 * (i + 1) / Math.Max(items.Count, 1));
             }
 
-            foreach (var userId in _userManager.Users.Select(u => u.Id).ToList())
+            foreach (var userId in _userManager.GetUsers().Select(u => u.Id).ToList())
             {
                 cancellationToken.ThrowIfCancellationRequested();
                 await SyncUserAsync(userId).ConfigureAwait(false);
