@@ -1,0 +1,246 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <title>Path Filter</title>
+</head>
+<body>
+<div id="PathFilterConfigPage" data-role="page" class="page type-interior pluginConfigurationPage" data-require="emby-input,emby-button,emby-select,emby-checkbox">
+    <div data-role="content">
+        <div class="content-primary">
+            <style>
+                #PathFilterConfigPage .pf-section { margin-bottom: 2.5em; }
+                #PathFilterConfigPage .pf-help { opacity: .75; margin: .3em 0 1em; }
+                #PathFilterConfigPage table { width: 100%; border-collapse: collapse; }
+                #PathFilterConfigPage th, #PathFilterConfigPage td { text-align: left; padding: .45em .5em; border-bottom: 1px solid rgba(128,128,128,.25); vertical-align: middle; }
+                #PathFilterConfigPage th { font-weight: 600; font-size: .9em; opacity: .85; }
+                #PathFilterConfigPage input[type=text], #PathFilterConfigPage select { width: 100%; box-sizing: border-box; padding: .45em; border-radius: 4px; border: 1px solid rgba(128,128,128,.4); background: rgba(0,0,0,.15); color: inherit; font: inherit; }
+                #PathFilterConfigPage select option { color: #000; }
+                #PathFilterConfigPage .pf-override { font-weight: 700; border-color: #00a4dc; }
+                #PathFilterConfigPage .pf-state { font-size: .8em; opacity: .7; display: block; margin-top: .2em; }
+                #PathFilterConfigPage .pf-matrix { overflow-x: auto; }
+                #PathFilterConfigPage .pf-matrix td:first-child { white-space: nowrap; font-weight: 600; }
+                #PathFilterConfigPage .pf-admin { font-weight: 400; font-size: .8em; opacity: .7; }
+                #PathFilterConfigPage .pf-small { padding: .3em .8em; min-width: 0; }
+                #PathFilterConfigPage .pf-empty { opacity: .6; font-style: italic; padding: 1em .5em; }
+            </style>
+
+            <h2 class="sectionTitle">Path Filter</h2>
+            <p class="pf-help">Hide folders inside a library from chosen users. A show or movie is either fully visible or fully hidden. Restrictions apply in every app, in search, Next Up and Latest.</p>
+
+            <form id="PathFilterForm">
+                <div class="pf-section">
+                    <h3>Folders</h3>
+                    <p class="pf-help">Add each folder you want to control. The default applies to every user who has no override, including users you create later. Folders not listed here are visible to everyone.</p>
+                    <table>
+                        <thead><tr><th style="width:60%">Folder path</th><th>Default</th><th></th></tr></thead>
+                        <tbody id="pfRules"></tbody>
+                    </table>
+                    <datalist id="pfPathHints"></datalist>
+                    <button is="emby-button" type="button" id="pfAddRule" class="raised button-alt pf-small" style="margin-top:1em">+ Add folder</button>
+                </div>
+
+                <div class="pf-section">
+                    <h3>Users</h3>
+                    <p class="pf-help"><b>Default</b> follows the folder's default, and changes when you change it. <b>Visible</b> or <b>Hidden</b> is an override that sticks until you set it back to Default.</p>
+                    <div class="pf-matrix"><table id="pfMatrix"></table></div>
+                </div>
+
+                <div class="pf-section">
+                    <div class="checkboxContainer">
+                        <label>
+                            <input is="emby-checkbox" type="checkbox" id="pfExemptAdmins" />
+                            <span>Never restrict administrators</span>
+                        </label>
+                    </div>
+                </div>
+
+                <button is="emby-button" type="submit" class="raised button-submit block"><span>Save</span></button>
+            </form>
+        </div>
+    </div>
+
+    <script type="text/javascript">
+        (function () {
+            var pluginId = '38f287a9-5faf-4457-8811-d088e3dbf5dc';
+            var page = document.querySelector('#PathFilterConfigPage');
+            var state = { config: null, users: [] };
+
+            function uuid() {
+                // crypto.randomUUID needs HTTPS; most home servers are plain http on the LAN.
+                return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function (c) {
+                    var r = Math.random() * 16 | 0;
+                    return (c === 'x' ? r : (r & 0x3 | 0x8)).toString(16);
+                });
+            }
+
+            function esc(s) {
+                return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) {
+                    return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
+                });
+            }
+
+            function sameId(a, b) { return String(a).replace(/-/g, '').toLowerCase() === String(b).replace(/-/g, '').toLowerCase(); }
+
+            function findOverride(userId, ruleId) {
+                return state.config.Overrides.filter(function (o) { return sameId(o.UserId, userId) && sameId(o.RuleId, ruleId); })[0];
+            }
+
+            function setOverride(userId, ruleId, value) {
+                state.config.Overrides = state.config.Overrides.filter(function (o) { return !(sameId(o.UserId, userId) && sameId(o.RuleId, ruleId)); });
+                if (value === 'visible' || value === 'hidden') {
+                    state.config.Overrides.push({ UserId: userId, RuleId: ruleId, Visible: value === 'visible' });
+                }
+            }
+
+            function ruleLabel(rule) {
+                var p = (rule.Path || '').replace(/\/+$/, '');
+                return p ? p.split('/').pop() || p : '(no path)';
+            }
+
+            function renderRules() {
+                var tbody = page.querySelector('#pfRules');
+                if (!state.config.Rules.length) {
+                    tbody.innerHTML = '<tr><td colspan="3" class="pf-empty">No folders yet. Add one to get started.</td></tr>';
+                    return;
+                }
+                tbody.innerHTML = state.config.Rules.map(function (r, i) {
+                    return '<tr>' +
+                        '<td><input type="text" list="pfPathHints" data-i="' + i + '" class="pfPath" value="' + esc(r.Path) + '" placeholder="/media/tv/shows2" /></td>' +
+                        '<td><select data-i="' + i + '" class="pfDefault">' +
+                        '<option value="visible"' + (r.HiddenByDefault ? '' : ' selected') + '>Visible</option>' +
+                        '<option value="hidden"' + (r.HiddenByDefault ? ' selected' : '') + '>Hidden</option>' +
+                        '</select></td>' +
+                        '<td><button is="emby-button" type="button" class="pfRemove raised pf-small" data-i="' + i + '">Remove</button></td>' +
+                        '</tr>';
+                }).join('');
+            }
+
+            function renderMatrix() {
+                var table = page.querySelector('#pfMatrix');
+                var rules = state.config.Rules;
+                if (!rules.length) {
+                    table.innerHTML = '<tr><td class="pf-empty">Add a folder above first.</td></tr>';
+                    return;
+                }
+                var head = '<thead><tr><th>User</th>' + rules.map(function (r) {
+                    return '<th title="' + esc(r.Path) + '">' + esc(ruleLabel(r)) + '</th>';
+                }).join('') + '</tr></thead>';
+
+                var exemptAdmins = page.querySelector('#pfExemptAdmins').checked;
+                var body = '<tbody>' + state.users.map(function (u) {
+                    var isAdmin = u.Policy && u.Policy.IsAdministrator;
+                    var cells = rules.map(function (r) {
+                        if (isAdmin && exemptAdmins) {
+                            return '<td><span class="pf-state">Admin: always visible</span></td>';
+                        }
+                        var ov = findOverride(u.Id, r.Id);
+                        var val = ov ? (ov.Visible ? 'visible' : 'hidden') : 'default';
+                        var effective = ov ? (ov.Visible ? 'Visible' : 'Hidden') : (r.HiddenByDefault ? 'Hidden' : 'Visible');
+                        return '<td><select class="pfCell' + (ov ? ' pf-override' : '') + '" data-user="' + esc(u.Id) + '" data-rule="' + esc(r.Id) + '">' +
+                            '<option value="default"' + (val === 'default' ? ' selected' : '') + '>Default (' + (r.HiddenByDefault ? 'Hidden' : 'Visible') + ')</option>' +
+                            '<option value="visible"' + (val === 'visible' ? ' selected' : '') + '>Visible</option>' +
+                            '<option value="hidden"' + (val === 'hidden' ? ' selected' : '') + '>Hidden</option>' +
+                            '</select><span class="pf-state">' + (ov ? 'Override: ' : 'Inherited: ') + effective + '</span></td>';
+                    }).join('');
+                    return '<tr><td>' + esc(u.Name) + (isAdmin ? ' <span class="pf-admin">(admin)</span>' : '') + '</td>' + cells + '</tr>';
+                }).join('') + '</tbody>';
+                table.innerHTML = head + body;
+            }
+
+            function renderAll() { renderRules(); renderMatrix(); }
+
+            page.querySelector('#pfAddRule').addEventListener('click', function () {
+                state.config.Rules.push({ Id: uuid(), Path: '', HiddenByDefault: true });
+                renderAll();
+                var inputs = page.querySelectorAll('.pfPath');
+                if (inputs.length) { inputs[inputs.length - 1].focus(); }
+            });
+
+            page.querySelector('#pfRules').addEventListener('input', function (e) {
+                if (e.target.classList.contains('pfPath')) {
+                    state.config.Rules[+e.target.dataset.i].Path = e.target.value;
+                }
+            });
+
+            page.querySelector('#pfRules').addEventListener('change', function (e) {
+                var i = +e.target.dataset.i;
+                if (e.target.classList.contains('pfDefault')) {
+                    state.config.Rules[i].HiddenByDefault = e.target.value === 'hidden';
+                }
+                renderMatrix();
+            });
+
+            page.querySelector('#pfRules').addEventListener('click', function (e) {
+                var btn = e.target.closest('.pfRemove');
+                if (!btn) { return; }
+                var rule = state.config.Rules[+btn.dataset.i];
+                if (!confirm('Stop managing ' + (rule.Path || 'this folder') + '? It becomes visible to everyone and its overrides are removed.')) { return; }
+                state.config.Rules.splice(+btn.dataset.i, 1);
+                state.config.Overrides = state.config.Overrides.filter(function (o) { return !sameId(o.RuleId, rule.Id); });
+                renderAll();
+            });
+
+            page.querySelector('#pfMatrix').addEventListener('change', function (e) {
+                if (e.target.classList.contains('pfCell')) {
+                    setOverride(e.target.dataset.user, e.target.dataset.rule, e.target.value);
+                    renderMatrix();
+                }
+            });
+
+            page.querySelector('#pfExemptAdmins').addEventListener('change', renderMatrix);
+
+            page.addEventListener('pageshow', function () {
+                Dashboard.showLoadingMsg();
+                Promise.all([
+                    ApiClient.getPluginConfiguration(pluginId),
+                    ApiClient.getUsers(),
+                    ApiClient.getVirtualFolders ? ApiClient.getVirtualFolders() : Promise.resolve([])
+                ]).then(function (results) {
+                    var config = results[0];
+                    config.Rules = config.Rules || [];
+                    config.Overrides = config.Overrides || [];
+                    state.config = config;
+                    state.users = (results[1] || []).slice().sort(function (a, b) { return a.Name.localeCompare(b.Name); });
+                    page.querySelector('#pfExemptAdmins').checked = config.ExemptAdministrators !== false;
+
+                    var hints = [];
+                    (results[2] || []).forEach(function (lib) { (lib.Locations || []).forEach(function (p) { hints.push(p); }); });
+                    page.querySelector('#pfPathHints').innerHTML = hints.map(function (p) { return '<option value="' + esc(p) + '"></option>'; }).join('');
+
+                    renderAll();
+                    Dashboard.hideLoadingMsg();
+                }).catch(function (err) {
+                    console.error('Path Filter', err);
+                    Dashboard.hideLoadingMsg();
+                    Dashboard.alert('Could not load Path Filter settings.');
+                });
+            });
+
+            page.querySelector('#PathFilterForm').addEventListener('submit', function (e) {
+                e.preventDefault();
+                var cfg = state.config;
+                cfg.Rules = cfg.Rules
+                    .map(function (r) { r.Path = (r.Path || '').trim(); return r; })
+                    .filter(function (r) { return r.Path.length > 0; });
+                var bad = cfg.Rules.filter(function (r) { return r.Path.charAt(0) !== '/' && !/^[A-Za-z]:[\\/]/.test(r.Path); });
+                if (bad.length) {
+                    Dashboard.alert('Folder paths must be absolute, e.g. /media/tv/shows2');
+                    return false;
+                }
+                var ids = cfg.Rules.map(function (r) { return r.Id; });
+                cfg.Overrides = cfg.Overrides.filter(function (o) { return ids.some(function (id) { return sameId(id, o.RuleId); }); });
+                cfg.ExemptAdministrators = page.querySelector('#pfExemptAdmins').checked;
+
+                Dashboard.showLoadingMsg();
+                ApiClient.updatePluginConfiguration(pluginId, cfg).then(function (result) {
+                    Dashboard.processPluginConfigurationUpdateResult(result);
+                    renderAll();
+                });
+                return false;
+            });
+        })();
+    </script>
+</div>
+</body>
+</html>
