@@ -1,0 +1,21 @@
+[
+  {
+    "guid": "38f287a9-5faf-4457-8811-d088e3dbf5dc",
+    "versions": [
+      {
+        "version": "1.1.0.0",
+        "changelog": "Full sync after every library scan; log each item tagged as it is added or refreshed; installable from a plugin repository.",
+        "targetAbi": "12.0.0.0",
+        "sourceUrl": "https://github.com/garthski/jellyfin-plugin-pathfilter/releases/download/v1.1.0.0/pathfilter_1.1.0.0.zip",
+        "checksum": "9e58d3a3d20452de486a40822e6071ab",
+        "timestamp": "2026-11-06T13:18:17.0000000Z"
+      }
+    ],
+    "name": "Path Filter",
+    "description": "Hide folders inside a library from chosen users, with per-folder defaults and per-user overrides. Enforced through Jellyfin's own blocked tags.",
+    "overview": "Per-user folder visibility inside a library",
+    "owner": "garthski",
+    "category": "General",
+    "imageUrl": ""
+  }
+]
