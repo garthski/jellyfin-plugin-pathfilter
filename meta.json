@@ -5,7 +5,7 @@
   "guid": "38f287a9-5faf-4457-8811-d088e3dbf5dc",
   "name": "Path Filter",
   "overview": "Per-user folder visibility inside a library",
-  "owner": "gareth",
+  "owner": "garthski",
   "targetAbi": "12.0.0.0",
   "timestamp": "2026-11-05T00:00:00.0000000Z",
   "version": "1.0.0.0",

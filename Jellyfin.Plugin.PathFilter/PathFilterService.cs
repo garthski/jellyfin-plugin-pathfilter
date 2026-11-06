@@ -101,7 +101,7 @@ public sealed class PathFilterService : IDisposable
     // ---------------------------------------------------------------- items
 
     /// <summary>Applies the right tags to one item. Returns true if it had to change anything.</summary>
-    public async Task<bool> SyncItemAsync(BaseItem item, CancellationToken cancellationToken)
+    public async Task<bool> SyncItemAsync(BaseItem item, CancellationToken cancellationToken, bool logChange = false)
     {
         if (!IsManaged(item))
         {
@@ -127,6 +127,29 @@ public sealed class PathFilterService : IDisposable
 
         item.Tags = desired;
         await item.UpdateToRepositoryAsync(ItemUpdateType.MetadataEdit, cancellationToken).ConfigureAwait(false);
+
+        if (logChange)
+        {
+            var ours = desired.Where(IsOurTag).ToArray();
+            if (ours.Length > 0)
+            {
+                _logger.LogInformation(
+                    "Path Filter: tagged {Type} \"{Name}\" ({Path}) with {Tags}",
+                    item.GetType().Name,
+                    item.Name,
+                    path,
+                    string.Join(", ", ours));
+            }
+            else
+            {
+                _logger.LogInformation(
+                    "Path Filter: removed folder tags from {Type} \"{Name}\" ({Path})",
+                    item.GetType().Name,
+                    item.Name,
+                    path);
+            }
+        }
+
         return true;
     }
 

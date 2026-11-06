@@ -27,7 +27,8 @@ The plugin only ever adds or removes tags starting with `pathfilter-`. Your own 
 | Event | What happens |
 |---|---|
 | Save settings | Full re-tag + every user re-synced |
-| New/updated item (scan, metadata refresh) | That item re-tagged (so a "replace all metadata" refresh can't strip it) |
+| New/updated item (scan, metadata refresh) | That item re-tagged immediately and logged (so a "replace all metadata" refresh can't strip it) |
+| Library scan finishes | Full sync, as a second net |
 | User created | Defaults applied immediately, and again 10 s later (the dashboard's new-user form saves its own policy) |
 | User edited | That user's hidden folders re-applied |
 | Startup + every 12 h | Full sync (Dashboard → Scheduled Tasks → Path Filter) |
@@ -42,7 +43,20 @@ dotnet publish Jellyfin.Plugin.PathFilter/Jellyfin.Plugin.PathFilter.csproj -c R
 
 Or push this folder to a GitHub repo: `.github/workflows/build.yml` builds it and uploads a ready-to-install `PathFilter_1.0.0.0` folder as an artifact.
 
-## Install
+## Install from the plugin repository (recommended)
+
+1. Dashboard → Plugins → Repositories (or Catalog → ⚙) → add:
+   `https://raw.githubusercontent.com/garthski/jellyfin-plugin-pathfilter/main/manifest.json`
+2. Catalog → Path Filter → Install, then restart Jellyfin.
+
+New releases then show up as updates in the dashboard. The GitHub repo must be public for Jellyfin to read the manifest and download releases.
+
+## Releasing a new version
+
+Actions → **Release plugin** → Run workflow → enter a version (e.g. `1.2.0.0`) and changelog.
+It builds the DLL, attaches `pathfilter_<version>.zip` to a GitHub release, and adds the version to `manifest.json` with its checksum.
+
+## Install manually
 
 1. Copy `Jellyfin.Plugin.PathFilter.dll` and `meta.json` into `<jellyfin config>/plugins/PathFilter_1.0.0.0/`
    (Docker: usually `/config/plugins/PathFilter_1.0.0.0/`).

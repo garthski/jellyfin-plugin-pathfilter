@@ -1,0 +1,88 @@
+name: Release plugin
+
+# Run from the Actions tab: "Release plugin" -> "Run workflow".
+# Builds the plugin, publishes a GitHub release with the zip, and adds the
+# version to manifest.json so Jellyfin offers it as an update.
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version, four parts (e.g. 1.1.0.0)'
+        required: true
+      changelog:
+        description: 'What changed'
+        required: true
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    env:
+      VERSION: ${{ inputs.version }}
+      CHANGELOG: ${{ inputs.changelog }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+
+      - name: Check version format
+        run: |
+          if ! [[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "::error::Version must have four numeric parts, e.g. 1.1.0.0"
+            exit 1
+          fi
+          if git ls-remote --exit-code --tags origin "v$VERSION" >/dev/null; then
+            echo "::error::Release v$VERSION already exists"
+            exit 1
+          fi
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Build
+        run: >
+          dotnet publish Jellyfin.Plugin.PathFilter/Jellyfin.Plugin.PathFilter.csproj -c Release -o out
+          -p:Version=$VERSION -p:AssemblyVersion=$VERSION -p:FileVersion=$VERSION
+
+      - name: Package
+        id: package
+        run: |
+          ZIP="pathfilter_${VERSION}.zip"
+          TIMESTAMP="$(date -u +%Y-%m-%dT%H:%M:%S.0000000Z)"
+          mkdir pkg
+          cp out/Jellyfin.Plugin.PathFilter.dll pkg/
+          python3 - <<'EOF'
+          import json, os
+          meta = json.load(open("meta.json"))
+          meta["version"] = os.environ["VERSION"]
+          meta["changelog"] = os.environ["CHANGELOG"]
+          json.dump(meta, open("pkg/meta.json", "w"), indent=2)
+          EOF
+          (cd pkg && zip -q "../$ZIP" *)
+          echo "zip=$ZIP" >> "$GITHUB_OUTPUT"
+          echo "md5=$(md5sum "$ZIP" | cut -d' ' -f1)" >> "$GITHUB_OUTPUT"
+          echo "timestamp=$TIMESTAMP" >> "$GITHUB_OUTPUT"
+
+      - name: Create GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release create "v$VERSION" "${{ steps.package.outputs.zip }}" --title "Path Filter $VERSION" --notes "$CHANGELOG" --target main
+
+      - name: Update manifest.json
+        run: |
+          URL="https://github.com/${{ github.repository }}/releases/download/v${VERSION}/${{ steps.package.outputs.zip }}"
+          python3 scripts/update_manifest.py manifest.json meta.json "$VERSION" "$CHANGELOG" "$URL" \
+            "${{ steps.package.outputs.md5 }}" "${{ steps.package.outputs.timestamp }}"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add manifest.json
+          git commit -m "Release $VERSION: update manifest"
+          git push origin HEAD:main
